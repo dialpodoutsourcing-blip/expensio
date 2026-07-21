@@ -58,6 +58,7 @@ document.querySelector('#app').innerHTML = `
         <div><p class="eyebrow" id="breadcrumb">FINANCE / EXPENSES</p><h1 id="pageTitle">Expense report</h1><p id="pageSubtitle">Track, review and manage all company spending in one place.</p></div>
         <div class="heading-actions"><button class="export-button" id="exportBtn">Export CSV</button></div>
       </section>
+      <div class="coverage-notice" id="coverageNotice" role="status"><span>i</span><p></p></div>
 
       <section class="date-toolbar">
         <div class="date-presets" id="datePresets"><button data-range="today">Today</button><button data-range="7">Last 7 days</button><button data-range="30">Last 30 days</button><button data-range="all" class="active">All time</button><button data-range="custom">${icons.calendar} Custom</button></div>
@@ -164,7 +165,19 @@ function applyFilters() {
   const query = document.querySelector('#tableSearch').value.toLowerCase().trim();
   const status = document.querySelector('#statusFilter').value;
   filtered = expenses.filter(e => inDateRange(e.date) && (status === 'all' || e.status === status) && (!query || Object.values(e).join(' ').toLowerCase().includes(query)));
-  page = 1; renderStats(); renderTable(); renderOverview();
+  page = 1; renderStats(); renderTable(); renderOverview(); updateCoverageNotice();
+}
+
+function updateCoverageNotice() {
+  const notice = document.querySelector('#coverageNotice');
+  if (activeRange !== '30' || !expenses.length) { notice.classList.remove('show'); return; }
+  const oldest = expenses.map(e => new Date(`${e.date}T00:00:00`)).filter(date => !Number.isNaN(date)).sort((a,b) => a-b)[0];
+  const requiredStart = new Date(); requiredStart.setHours(0,0,0,0); requiredStart.setDate(requiredStart.getDate() - 29);
+  if (oldest > requiredStart) {
+    const oldestLabel = new Intl.DateTimeFormat('en', { month:'long', day:'numeric', year:'numeric' }).format(oldest);
+    notice.querySelector('p').innerHTML = `Available records begin on <strong>${oldestLabel}</strong>. The Last 30 days view may be incomplete.`;
+    notice.classList.add('show');
+  } else notice.classList.remove('show');
 }
 
 function inDateRange(dateString) {
