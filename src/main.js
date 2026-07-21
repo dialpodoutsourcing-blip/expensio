@@ -19,6 +19,10 @@ const icons = {
 };
 
 document.querySelector('#app').innerHTML = `
+  <div class="app-loader" id="appLoader" role="status" aria-label="Loading Expensio">
+    <div class="loader-brand"><span class="loader-mark">E</span><div class="loader-word">${[...'expensio'].map((letter, i) => `<span style="--i:${i}">${letter}</span>`).join('')}</div></div>
+    <div class="loader-track"><i></i></div><p>Preparing your workspace</p>
+  </div>
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="brand-mark">E</span><span>expensio</span></div>
     <button class="close-menu icon-btn" id="closeMenu" aria-label="Close menu">${icons.x}</button>
@@ -309,6 +313,7 @@ function hideDetailCard() {
 }
 
 async function loadExpenses() {
+  const startedAt = Date.now();
   try {
     const response = await fetch(SHEET_CSV, { cache: 'no-store' });
     if (!response.ok) throw new Error('Could not load spreadsheet');
@@ -318,6 +323,9 @@ async function loadExpenses() {
   } catch (error) {
     document.querySelector('#expenseRows').innerHTML = `<tr><td colspan="8"><div class="empty-state error">Unable to reach the spreadsheet. Check the published link and refresh.</div></td></tr>`;
     document.querySelector('#recordLabel').textContent = 'Spreadsheet unavailable';
+  } finally {
+    const remaining = Math.max(0, 900 - (Date.now() - startedAt));
+    setTimeout(() => { const loader = document.querySelector('#appLoader'); loader.classList.add('done'); setTimeout(() => loader.remove(), 500); }, remaining);
   }
 }
 
