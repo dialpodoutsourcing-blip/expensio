@@ -171,10 +171,12 @@ function applyFilters() {
 function updateCoverageNotice() {
   const notice = document.querySelector('#coverageNotice');
   if (activeRange !== '30' || !expenses.length) { notice.classList.remove('show'); return; }
-  const oldest = expenses.map(e => new Date(`${e.date}T00:00:00`)).filter(date => !Number.isNaN(date)).sort((a,b) => a-b)[0];
+  const dates = expenses.map(e => new Date(`${e.date}T00:00:00`)).filter(date => !Number.isNaN(date)).sort((a,b) => a-b);
   const requiredStart = new Date(); requiredStart.setHours(0,0,0,0); requiredStart.setDate(requiredStart.getDate() - 29);
-  if (oldest > requiredStart) {
-    const oldestLabel = new Intl.DateTimeFormat('en', { month:'long', day:'numeric', year:'numeric' }).format(oldest);
+  const olderRecords = dates.filter(date => date < requiredStart);
+  const oldestMainRecord = dates.find(date => date >= requiredStart);
+  if (olderRecords.length <= 5 && oldestMainRecord && oldestMainRecord > requiredStart) {
+    const oldestLabel = new Intl.DateTimeFormat('en', { month:'long', day:'numeric', year:'numeric' }).format(oldestMainRecord);
     notice.querySelector('p').innerHTML = `Available records begin on <strong>${oldestLabel}</strong>. The Last 30 days view may be incomplete.`;
     notice.classList.add('show');
   } else notice.classList.remove('show');
