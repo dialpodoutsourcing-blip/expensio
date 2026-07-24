@@ -1,6 +1,8 @@
 import './style.css';
 
-const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT3IcmnuxB0Lmud5okOAH1G5FINjRY78JMeNq9M41mNsgyD56AwaG1fOnV7fGoU6r15-qz29WG-tS8z/pub?output=csv';
+const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT3IcmnuxB0Lmud5okOAH1G5FINjRY78JMeNq9M41mNsgyD56AwaG1fOnV7fGoU6r15-qz29WG-tS8z/pub?output=csv';
+const SHEET_CSV = `${SHEET_BASE}&sheet=Sheet1`;
+const AUCTION_POOL_CSV = `${SHEET_BASE}&sheet=Sheet2`;
 
 const icons = {
   grid: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
@@ -30,6 +32,7 @@ document.querySelector('#app').innerHTML = `
       <p class="nav-label">WORKSPACE</p>
       <a href="#overview" class="nav-item" data-view="overview"><i>${icons.grid}</i><span>Overview</span></a>
       <a href="#expenses" class="nav-item active" data-view="expenses"><i>${icons.receipt}</i><span>Expense report</span><b>01</b></a>
+      <a href="#auction-pool" class="nav-item" data-view="auction-pool"><i>${icons.grid}</i><span>Auction Pool</span><b>02</b></a>
       <a href="#" class="nav-item locked" aria-disabled="true" data-tooltip="Coming soon"><i>${icons.chart}</i><span>Analytics</span><b class="nav-lock">${icons.lock}</b></a>
       <a href="#" class="nav-item locked" aria-disabled="true" data-tooltip="Coming soon"><i>${icons.wallet}</i><span>Budgets</span><b class="nav-lock">${icons.lock}</b></a>
       <p class="nav-label manage">MANAGE</p>
@@ -95,10 +98,13 @@ document.querySelector('#app').innerHTML = `
   <aside class="detail-popover" id="detailPopover" aria-hidden="true"></aside>
 `;
 
+let expenseRecords = [];
+let auctionPoolRecords = [];
 let expenses = [];
 let filtered = [];
 let page = 1;
 let activeRange = 'all';
+let currentView = 'expenses';
 const pageSize = 8;
 
 function parseCSV(text) {
@@ -274,13 +280,23 @@ function renderOverview() {
 }
 
 function switchView(view) {
+  currentView = view;
+  expenses = view === 'auction-pool' ? auctionPoolRecords : expenseRecords;
   document.body.dataset.view = view;
   document.querySelectorAll('[data-view]').forEach(link => link.classList.toggle('active', link.dataset.view === view));
-  document.querySelector('#pageTitle').textContent = view === 'overview' ? 'Overview' : 'Expense report';
-  document.querySelector('#breadcrumb').textContent = view === 'overview' ? 'FINANCE / OVERVIEW' : 'FINANCE / EXPENSES';
-  document.querySelector('#pageSubtitle').textContent = view === 'overview' ? 'A clear view of spending, categories and payment health.' : 'Track, review and manage all company spending in one place.';
+  const isOverview = view === 'overview';
+  const isAuctionPool = view === 'auction-pool';
+  document.querySelector('#pageTitle').textContent = isOverview ? 'Overview' : isAuctionPool ? 'Action Pool Focus Room' : 'Expense report';
+  document.querySelector('#breadcrumb').textContent = isOverview ? 'FINANCE / OVERVIEW' : isAuctionPool ? 'WORKSPACE / AUCTION POOL' : 'FINANCE / EXPENSES';
+  document.querySelector('#pageSubtitle').textContent = isOverview ? 'A clear view of spending, categories and payment health.' : isAuctionPool ? 'Review and manage Auction Pool records from Sheet2.' : 'Track, review and manage all company spending in one place.';
+  document.querySelector('.report-head h2').textContent = isAuctionPool ? 'Auction Pool records' : 'All expenses';
+  document.querySelector('#globalSearch').placeholder = isAuctionPool ? 'Search Auction Pool...' : 'Search expenses...';
   document.querySelector('#exportBtn').style.display = view === 'overview' ? 'none' : '';
-  document.body.classList.remove('menu-open'); renderOverview();
+  document.querySelector('#tableSearch').value = '';
+  document.querySelector('#globalSearch').value = '';
+  document.querySelector('#statusFilter').value = 'all';
+  document.body.classList.remove('menu-open');
+  applyFilters();
 }
 
 function renderTable() {
@@ -300,7 +316,7 @@ function renderTable() {
     </tr>`).join('') : '<tr><td colspan="8"><div class="empty-state">No matching expenses found.</div></td></tr>';
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   document.querySelector('#pageInfo').textContent = filtered.length ? `Showing ${start + 1}–${Math.min(start + pageSize, filtered.length)} of ${filtered.length}` : 'No records';
-  document.querySelector('#recordLabel').textContent = `${filtered.length} expense records`;
+  document.querySelector('#recordLabel').textContent = `${filtered.length} ${currentView === 'auction-pool' ? 'Auction Pool' : 'expense'} records`;
   document.querySelector('#prevPage').disabled = page === 1;
   document.querySelector('#nextPage').disabled = page === pages;
   document.querySelector('#pageButtons').innerHTML = Array.from({length: Math.min(pages, 5)}, (_, i) => {
@@ -330,9 +346,14 @@ function hideDetailCard() {
 async function loadExpenses() {
   const startedAt = Date.now();
   try {
-    const response = await fetch(SHEET_CSV, { cache: 'no-store' });
-    if (!response.ok) throw new Error('Could not load spreadsheet');
-    expenses = parseCSV(await response.text()).map(normalize).filter(e => e.key);
+    const [expenseResponse, auctionResponse] = await Promise.all([
+      fetch(SHEET_CSV, { cache: 'no-store' }),
+      fetch(AUCTION_POOL_CSV, { cache: 'no-store' })
+    ]);
+    if (!expenseResponse.ok || !auctionResponse.ok) throw new Error('Could not load spreadsheet');
+    expenseRecords = parseCSV(await expenseResponse.text()).map(normalize).filter(e => e.key);
+    auctionPoolRecords = parseCSV(await auctionResponse.text()).map(normalize).filter(e => e.key);
+    expenses = currentView === 'auction-pool' ? auctionPoolRecords : expenseRecords;
     filtered = [...expenses]; renderStats(); renderTable(); renderOverview();
     document.querySelector('#refreshedAt').textContent = new Intl.DateTimeFormat('en', {hour:'numeric', minute:'2-digit'}).format(new Date());
   } catch (error) {
@@ -367,7 +388,8 @@ document.querySelector('#menuBtn').addEventListener('click', () => document.body
 document.querySelector('#closeMenu').addEventListener('click', () => document.body.classList.remove('menu-open'));
 document.querySelector('#backdrop').addEventListener('click', () => document.body.classList.remove('menu-open'));
 document.querySelector('#exportBtn').addEventListener('click', () => {
-  const link = document.createElement('a'); link.href = SHEET_CSV; link.download = 'expense-report.csv'; link.target = '_blank'; link.click();
+  const isAuctionPool = currentView === 'auction-pool';
+  const link = document.createElement('a'); link.href = isAuctionPool ? AUCTION_POOL_CSV : SHEET_CSV; link.download = isAuctionPool ? 'auction-pool.csv' : 'expense-report.csv'; link.target = '_blank'; link.click();
   const toast = document.querySelector('#toast'); toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 2200);
 });
 
