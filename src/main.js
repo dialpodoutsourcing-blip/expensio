@@ -1,8 +1,8 @@
 import './style.css';
 
 const SHEET_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT3IcmnuxB0Lmud5okOAH1G5FINjRY78JMeNq9M41mNsgyD56AwaG1fOnV7fGoU6r15-qz29WG-tS8z/pub?output=csv';
-const SHEET_CSV = `${SHEET_BASE}&sheet=Sheet1`;
-const AUCTION_POOL_CSV = `${SHEET_BASE}&sheet=Sheet2`;
+const SHEET_CSV = `${SHEET_BASE}&gid=0`;
+const AUCTION_POOL_CSV = `${SHEET_BASE}&gid=1149715011`;
 
 const icons = {
   grid: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
@@ -87,7 +87,7 @@ document.querySelector('#app').innerHTML = `
       <section class="report-card expense-view">
         <div class="report-head"><div><h2>All expenses</h2><p id="recordLabel">Connecting to spreadsheet...</p></div><div class="table-controls"><div class="table-search"><i>${icons.search}</i><input id="tableSearch" placeholder="Search records" /></div><select id="statusFilter" aria-label="Filter by status"><option value="all">All statuses</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Transaction</th><th>Date</th><th>Details</th><th>Price</th><th>AED value</th><th>Status</th><th>Type</th><th></th></tr></thead><tbody id="expenseRows"><tr><td colspan="8"><div class="loader"><span></span>Loading spreadsheet data...</div></td></tr></tbody></table>
+          <table><thead id="tableHead"><tr><th>Transaction</th><th>Date</th><th>Details</th><th>Price</th><th>AED value</th><th>Status</th><th>Type</th><th></th></tr></thead><tbody id="expenseRows"><tr><td colspan="8"><div class="loader"><span></span>Loading spreadsheet data...</div></td></tr></tbody></table>
         </div>
         <div class="pagination"><p id="pageInfo">—</p><div><button id="prevPage">←</button><span id="pageButtons"></span><button id="nextPage">→</button></div></div>
       </section>
@@ -133,6 +133,15 @@ function normalize(row) {
     key: row['Transaction Key'], email: row['Email ID'], date: row.Date, due: row.Due,
     details: row.Details, price: row.Price, aed: row['Convert to AED'],
     status: row.Status.toLowerCase(), type: row.Type
+  };
+}
+
+function normalizeAuction(row) {
+  return {
+    id: row.ID, fileNumber: row['File number'], city: row.City, court: row['Local Court'],
+    object: row.Object, address: row.Address, marketValue: row['Market value_EUR'],
+    deadline: row.Deadline, status: row.Status.toLowerCase(), canceled: row.Canceled,
+    detailUrl: row.Detail_URL, reportUrl: row['Expert report_URL'], scrapedAt: row.Scrapped_am
   };
 }
 
@@ -291,6 +300,10 @@ function switchView(view) {
   document.querySelector('#pageSubtitle').textContent = isOverview ? 'A clear view of spending, categories and payment health.' : isAuctionPool ? 'Review and manage Auction Pool records from Sheet2.' : 'Track, review and manage all company spending in one place.';
   document.querySelector('.report-head h2').textContent = isAuctionPool ? 'Auction Pool records' : 'All expenses';
   document.querySelector('#globalSearch').placeholder = isAuctionPool ? 'Search Auction Pool...' : 'Search expenses...';
+  document.querySelector('#tableSearch').placeholder = isAuctionPool ? 'Search auctions' : 'Search records';
+  document.querySelector('#statusFilter').innerHTML = isAuctionPool
+    ? '<option value="all">All statuses</option><option value="neu">New</option>'
+    : '<option value="all">All statuses</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option>';
   document.querySelector('#exportBtn').style.display = view === 'overview' ? 'none' : '';
   document.querySelector('#tableSearch').value = '';
   document.querySelector('#globalSearch').value = '';
@@ -303,7 +316,21 @@ function renderTable() {
   const start = (page - 1) * pageSize;
   const pageRows = filtered.slice(start, start + pageSize);
   const body = document.querySelector('#expenseRows');
-  body.innerHTML = pageRows.length ? pageRows.map(e => `
+  const isAuctionPool = currentView === 'auction-pool';
+  document.querySelector('#tableHead').innerHTML = isAuctionPool
+    ? '<tr><th>Property</th><th>File / Court</th><th>Address</th><th>Market value</th><th>Deadline</th><th>Status</th><th>Links</th><th></th></tr>'
+    : '<tr><th>Transaction</th><th>Date</th><th>Details</th><th>Price</th><th>AED value</th><th>Status</th><th>Type</th><th></th></tr>';
+  body.innerHTML = pageRows.length ? (isAuctionPool ? pageRows.map(e => `
+    <tr>
+      <td><div class="vendor"><span class="vendor-icon">${escapeHTML(String(e.object || 'AU').slice(0, 2).toUpperCase())}</span><div><strong>${escapeHTML(e.object || 'Auction property')}</strong><small>ID ${escapeHTML(e.id)}</small></div></div></td>
+      <td><strong>${escapeHTML(e.fileNumber)}</strong><small>${escapeHTML(e.court)}</small></td>
+      <td><button class="details-cell" data-auction-id="${encodeURIComponent(e.id)}">${escapeHTML(e.address)}</button><small>${escapeHTML(e.city)}</small></td>
+      <td class="aed">${escapeHTML(new Intl.NumberFormat('de-DE', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(Number(e.marketValue) || 0))}</td>
+      <td>${escapeHTML(e.deadline)}</td>
+      <td><span class="status ${String(e.status).toLowerCase()}"><i></i>${escapeHTML(e.status)}</span></td>
+      <td><a class="type" href="${escapeHTML(e.detailUrl)}" target="_blank" rel="noopener">Details</a></td>
+      <td><button class="more-btn" aria-label="More options">${icons.more}</button></td>
+    </tr>`).join('') : pageRows.map(e => `
     <tr>
       <td><div class="vendor"><span class="vendor-icon">${escapeHTML(initials(e.key))}</span><div><strong>${escapeHTML(displayName(e.key))}</strong><small>${escapeHTML(e.email)}</small></div></div></td>
       <td><span class="date-cell">${formatDate(e.date)}</span>${e.due ? `<small>Due ${formatDate(e.due)}</small>` : ''}</td>
@@ -313,7 +340,7 @@ function renderTable() {
       <td><span class="status ${e.status}"><i></i>${escapeHTML(e.status)}</span></td>
       <td><span class="type">${escapeHTML(e.type)}</span></td>
       <td><button class="more-btn" aria-label="More options">${icons.more}</button></td>
-    </tr>`).join('') : '<tr><td colspan="8"><div class="empty-state">No matching expenses found.</div></td></tr>';
+    </tr>`).join('')) : `<tr><td colspan="8"><div class="empty-state">No matching ${isAuctionPool ? 'auctions' : 'expenses'} found.</div></td></tr>`;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   document.querySelector('#pageInfo').textContent = filtered.length ? `Showing ${start + 1}–${Math.min(start + pageSize, filtered.length)} of ${filtered.length}` : 'No records';
   document.querySelector('#recordLabel').textContent = `${filtered.length} ${currentView === 'auction-pool' ? 'Auction Pool' : 'expense'} records`;
@@ -326,6 +353,17 @@ function renderTable() {
 }
 
 function showDetailCard(trigger) {
+  if (trigger.dataset.auctionId) {
+    const auction = auctionPoolRecords.find(item => item.id === decodeURIComponent(trigger.dataset.auctionId));
+    if (!auction) return;
+    const popover = document.querySelector('#detailPopover');
+    popover.innerHTML = `<div class="popover-head"><div><span>AUCTION DETAILS</span><h3>${escapeHTML(auction.object)}</h3></div><span class="status ${String(auction.status).toLowerCase()}"><i></i>${escapeHTML(auction.status)}</span></div><p class="popover-description">${escapeHTML(auction.address)}</p><div class="popover-grid"><div><span>File number</span><strong>${escapeHTML(auction.fileNumber)}</strong></div><div><span>Local court</span><strong>${escapeHTML(auction.court)}</strong></div><div><span>City</span><strong>${escapeHTML(auction.city)}</strong></div><div><span>Deadline</span><strong>${escapeHTML(auction.deadline)}</strong></div><div><span>Market value</span><strong>EUR ${escapeHTML(auction.marketValue)}</strong></div><div><span>Canceled</span><strong>${escapeHTML(auction.canceled)}</strong></div></div><div class="popover-foot"><a href="${escapeHTML(auction.detailUrl)}" target="_blank" rel="noopener">Open auction details</a><a href="${escapeHTML(auction.reportUrl)}" target="_blank" rel="noopener">Expert report</a></div>`;
+    popover.classList.add('show'); popover.setAttribute('aria-hidden', 'false');
+    const rect = trigger.getBoundingClientRect(); const width = popover.offsetWidth; const height = popover.offsetHeight; const gap = 10;
+    popover.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+    popover.style.top = `${Math.max(12, rect.bottom + height + gap > window.innerHeight ? rect.top - height - gap : rect.bottom + gap)}px`;
+    return;
+  }
   const expense = expenses.find(item => item.key === decodeURIComponent(trigger.dataset.expenseKey));
   if (!expense) return;
   const popover = document.querySelector('#detailPopover');
@@ -352,7 +390,7 @@ async function loadExpenses() {
     ]);
     if (!expenseResponse.ok || !auctionResponse.ok) throw new Error('Could not load spreadsheet');
     expenseRecords = parseCSV(await expenseResponse.text()).map(normalize).filter(e => e.key);
-    auctionPoolRecords = parseCSV(await auctionResponse.text()).map(normalize).filter(e => e.key);
+    auctionPoolRecords = parseCSV(await auctionResponse.text()).map(normalizeAuction).filter(e => e.id);
     expenses = currentView === 'auction-pool' ? auctionPoolRecords : expenseRecords;
     filtered = [...expenses]; renderStats(); renderTable(); renderOverview();
     document.querySelector('#refreshedAt').textContent = new Intl.DateTimeFormat('en', {hour:'numeric', minute:'2-digit'}).format(new Date());
